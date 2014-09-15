@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <package>
-  <name>in_class_code_day3</name>
+  <name>warmup</name>
   <version>0.0.0</version>
-  <description>The code for day 3 of the class</description>
+  <description>The warmup package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag --> 
   <!-- Example:  -->
   <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="pruvolo@todo.todo">pruvolo</maintainer>
+  <maintainer email="cypressf@todo.todo">cypressf</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->
@@ -19,7 +19,7 @@
   <!-- Url tags are optional, but mutiple are allowed, one per tag -->
   <!-- Optional attribute type can be: website, bugtracker, or repository -->
   <!-- Example: -->
-  <!-- <url type="website">http://wiki.ros.org/beginner_tutorials</url> -->
+  <!-- <url type="website">http://wiki.ros.org/warmup</url> -->
 
 
   <!-- Author tags are optional, mutiple are allowed, one per tag -->
