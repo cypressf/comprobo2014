@@ -6,12 +6,14 @@ from sensor_msgs.msg import LaserScan
 import signal
 import sys
 import math
+import tf
 
 TAU = 2 * math.pi
 MAX_LINEAR_SPEED = 0.2
-MAX_ANGULAR_SPEED = 0.2
+MAX_ANGULAR_SPEED = 0.5
 DANGER_ZONE_LENGTH = 1.0
 DANGER_ZONE_WIDTH = 0.5
+DANGER_POINTS_MULTIPLIER = 1/50.0
 
 
 def degrees(radians):
@@ -67,15 +69,16 @@ class Point:
 class Controller:
 
     def __init__(self):
+        rospy.init_node('controller', anonymous=True)
         self.front_points = []
         self.proportion_constant = 1.0
         self.goal = 1.0  # meters
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
+        self.listener = tf.TransformListener()
         self.sub = None
-        self.move = self.turn_right
+        self.move = self.move_forward
         self.running = False
         signal.signal(signal.SIGINT, self.signal_handler)
-        rospy.init_node('controller', anonymous=True)
 
     def is_in_danger(self):
         return len(self.get_danger_points()) > 0
@@ -93,31 +96,28 @@ class Controller:
             return self.move_forward()
 
         if len(left_danger_points) < len(right_danger_points):
-            self.move = self.turn_left
-            return self.turn_left()
+            return self.turn_left(len(right_danger_points))
         else:
-            self.move = self.turn_right
-            return self.turn_right()
+            return self.turn_right(len(left_danger_points))
 
-    def turn_left(self):
-        if not self.is_in_danger():
-            self.move = self.move_forward
-            return self.move_forward()
+    def turn_left(self, num_danger_points):
+        rospy.loginfo("turn left")
+        angular_velocity = Vector3(z=num_danger_points * DANGER_POINTS_MULTIPLIER * MAX_ANGULAR_SPEED)
+        linear_velocity = Vector3(x=MAX_LINEAR_SPEED * (1 - num_danger_points * DANGER_POINTS_MULTIPLIER))
+        return Twist(angular=angular_velocity, linear=linear_velocity)
 
-        return Twist(angular=Vector3(z=MAX_ANGULAR_SPEED))
-
-    def turn_right(self):
-        if not self.is_in_danger():
-            self.move = self.move_forward
-            return self.move_forward()
-        rospy.loginfo(len(self.get_danger_points()))
-
-        return Twist(angular=Vector3(z=-MAX_ANGULAR_SPEED))
+    def turn_right(self, num_danger_points):
+        rospy.loginfo("turn right")
+        angular_velocity = Vector3(z=num_danger_points * DANGER_POINTS_MULTIPLIER * -MAX_ANGULAR_SPEED)
+        linear_velocity = Vector3(x=MAX_LINEAR_SPEED * (1 - num_danger_points * DANGER_POINTS_MULTIPLIER))
+        return Twist(angular=angular_velocity, linear=linear_velocity)
 
     def move_forward(self):
         if self.is_in_danger():
             self.move = self.find_path
+            return self.find_path()
 
+        rospy.loginfo("move forward")
         return Twist(linear=Vector3(x=MAX_LINEAR_SPEED))
 
     def scan_received(self, laser_scan_msg):
@@ -128,7 +128,15 @@ class Controller:
 
         front_points = [point for point in points if is_in_front_left(point) or is_in_front_right(point)]
         self.front_points = [point for point in front_points if 0 < point.length < 5]
-        self.pub.publish(self.move())
+
+        try:
+            (trans, rot) = self.listener.lookupTransform('/base_link', '/odom', rospy.Time(0))
+            rospy.loginfo(trans)
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass
+
+        if self.running:
+            self.pub.publish(self.move())
 
     def run(self):
         self.running = True

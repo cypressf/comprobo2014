@@ -86,6 +86,7 @@ class NeatoNode:
         scan.header.stamp = rospy.Time.now()
         last_motor_time = rospy.Time.now()
         total_dth = 0.0
+        print "about to spin!"
         while not rospy.is_shutdown():
             t_start = time.time()
             (scan.ranges, scan.intensities) = self.robot.getScanRanges()
