@@ -116,7 +116,7 @@ class Controller:
 
 if __name__ == '__main__':
     try:
-        teleop = Controller()
-        teleop.run()
+        controller = Controller()
+        controller.run()
     except rospy.ROSInterruptException:
         pass
