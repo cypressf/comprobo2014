@@ -9,7 +9,8 @@ import math
 
 TAU = 2 * math.pi
 MAX_LINEAR_SPEED = 0.2
-MAX_ANGULAR_SPEED = 1.0
+MAX_ANGULAR_SPEED = 0.2
+
 
 def degrees(radians):
     radians %= TAU
@@ -19,19 +20,35 @@ def degrees(radians):
     return int(degree_index)
 
 
-def translate_ranges(ranges):
-    return ranges[269::] + ranges[0::269]
+def ranges_to_points(ranges):
+    points = []
+    for angle, radius in enumerate(ranges[269::] + ranges[0::269]):
+        points.append(Point(radius=radius, angle=angle))
+    return points
 
+
+class Point:
+
+    def __init__(self, radius=0.0, angle=0.0):
+        self.radius = radius # meters
+        self.angle_degrees = angle
+        self.angle_radians = math.radians(angle)
+
+    def __lt__(self, other):
+        return self.radius < other.radius
+
+    def __str__(self):
+        return "radius: %.2f  angle: %.3f" % (self.radius, self.angle_radians / TAU)
 
 class Controller:
 
     def __init__(self):
+        self.points = []
         self.proportion_constant = 1.0
         self.goal = 1.0  # meters
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
         self.sub = None
-        self.mean_distance = None
-        self.closest_object = None
+        self.closest_point = Point(angle=0.0, radius=100.0)
         self.move = self.move_forward
         self.running = False
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -41,50 +58,55 @@ class Controller:
         # if self.mean_distance > 1.0:
         #     self.move = self.move_forward
 
-        if self.closest_object > 1.0:
+        if self.closest_point.angle_radians <= TAU * 1/4.0:
+            self.move = self.turn_left
+            return self.turn_left()
+        else:
+            self.move = self.turn_right
+            return self.turn_right()
+
+    def turn_left(self):
+        if self.closest_point.radius > 1.0:
             self.move = self.move_forward
+            return self.move_forward()
 
         return Twist(angular=Vector3(z=MAX_ANGULAR_SPEED))
+
+    def turn_right(self):
+        if self.closest_point.radius > 1.0:
+            self.move = self.move_forward
+            return self.move_forward()
+
+        return Twist(angular=Vector3(z=-MAX_ANGULAR_SPEED))
 
     def move_forward(self):
         # if self.mean_distance < 1.0:
         #     self.move = self.find_path
 
-        if self.closest_object <= 1.0:
+        if self.closest_point.radius <= 1.0:
             self.move = self.find_path
 
         return Twist(linear=Vector3(x=MAX_LINEAR_SPEED))
-
-    def approach_one_meter(self):
-        if self.mean_distance is not None:
-            error = self.mean_distance - self.goal
-            velocity = Vector3(x=error * self.proportion_constant)
-            message = Twist(linear=velocity)
-            self.pub.publish(message)
 
     def scan_received(self, laser_scan_msg):
         """
         Process new LaserScan message.
         """
-        ranges = translate_ranges(laser_scan_msg.ranges)
-        begin_index = degrees(TAU * 1/8)
-        end_index = degrees(TAU * 3/8)
-        front_readings = ranges[begin_index:end_index]
+        points = ranges_to_points(laser_scan_msg.ranges)
+        front_points = [point for point in points if TAU * 1/8.0 < point.angle_radians < TAU * 3/8.0]
+        valid_front_points = [point for point in front_points if 0 < point.radius < 8]
 
-        valid_front_readings = [reading for reading in front_readings if 0 < reading < 8]
+        if valid_front_points:
+            self.closest_point = min(valid_front_points)
 
-        self.closest_object = min(valid_front_readings)
-
-        if len(valid_front_readings) > 0:
-            self.mean_distance = sum(valid_front_readings) / float(len(valid_front_readings))
-            rospy.loginfo("Mean distance %f", self.mean_distance)
+        rospy.loginfo(self.closest_point)
+        self.pub.publish(self.move())
 
     def run(self):
         self.running = True
         self.sub = rospy.Subscriber('scan', LaserScan, self.scan_received)
         while not rospy.is_shutdown() and self.running:
-            message = self.move()
-            self.pub.publish(message)
+            rospy.spin()
 
     def signal_handler(self, signal, frame):
         self.running = False
