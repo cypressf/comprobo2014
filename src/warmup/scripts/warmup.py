@@ -14,7 +14,8 @@ MAX_ANGULAR_SPEED = 0.5
 DANGER_ZONE_LENGTH = 1.0
 DANGER_ZONE_WIDTH = 0.5
 DANGER_POINTS_MULTIPLIER = 1/50.0
-
+WALL_FOLLOW_MEASUREMENT_WIDTH = 1/32.0 * TAU
+WALL_FOLLOW_DISTANCE = 1.0
 
 def degrees(radians):
     radians %= TAU
@@ -24,8 +25,9 @@ def degrees(radians):
 
 def ranges_to_points(ranges):
     points = []
-    for angle, radius in enumerate(ranges):
-        points.append(Point(length=radius, angle=angle))
+    for angle, length in enumerate(ranges):
+        if length:
+            points.append(Point(length=length, angle=angle))
     return points
 
 
@@ -70,6 +72,7 @@ class Controller:
 
     def __init__(self):
         rospy.init_node('controller', anonymous=True)
+        self.points = []
         self.front_points = []
         self.proportion_constant = 1.0
         self.goal = 1.0  # meters
@@ -83,8 +86,50 @@ class Controller:
     def is_in_danger(self):
         return len(self.get_danger_points()) > 0
 
+    def get_right_points(self):
+        return [point for point in self.points if (5/8.0 * TAU) < point.angle_radians < (7/8.0 * TAU) and point.length > 0]
+
     def get_danger_points(self):
         return [point for point in self.front_points if is_in_danger_zone(point)]
+
+    def get_wall_follow_front(self):
+        return [point for point in self.points if (7/8.0 * TAU - WALL_FOLLOW_MEASUREMENT_WIDTH) < point.angle_radians < (7/8.0 * TAU + WALL_FOLLOW_MEASUREMENT_WIDTH)]
+
+    def get_wall_follow_back(self):
+        return [point for point in self.points if (5/8.0 * TAU - WALL_FOLLOW_MEASUREMENT_WIDTH) < point.angle_radians < (5/8.0 * TAU + WALL_FOLLOW_MEASUREMENT_WIDTH)]
+
+    def follow_wall(self):
+        if self.is_in_danger():
+            self.move = self.find_path
+            return self.find_path()
+
+        front_points = self.get_wall_follow_front()
+        back_points = self.get_wall_follow_back()
+        if not back_points or not front_points:
+            self.move = self.move_forward
+            return self.move_forward()
+
+        front_points_total = 0
+
+        for point in front_points:
+            front_points_total += point.length
+
+        front_points_total /= float(len(front_points))
+
+        back_points_total = 0
+        for point in back_points:
+            back_points_total += point.length
+
+        back_points_total /= float(len(back_points))
+
+
+        points_diff = (back_points_total - front_points_total) / (back_points_total + front_points_total)
+
+        linear_velocity = Vector3(x=MAX_LINEAR_SPEED)
+        rospy.loginfo(linear_velocity)
+        angular_velocity = Vector3(z=points_diff)
+
+        return Twist(linear=linear_velocity, angular=angular_velocity)
 
     def find_path(self):
         danger_points = self.get_danger_points()
@@ -117,6 +162,19 @@ class Controller:
             self.move = self.find_path
             return self.find_path()
 
+        front_points = self.get_wall_follow_front()
+        back_points = self.get_wall_follow_back()
+        if front_points and back_points:
+            right_points = front_points + back_points
+            right_points_avg = 0
+            for point in right_points:
+                right_points_avg += point.length
+            right_points_avg /= float(len(right_points))
+
+            if right_points_avg < WALL_FOLLOW_DISTANCE:
+                self.move = self.follow_wall
+                return self.follow_wall()
+
         rospy.loginfo("move forward")
         return Twist(linear=Vector3(x=MAX_LINEAR_SPEED))
 
@@ -124,16 +182,16 @@ class Controller:
         """
         Process new LaserScan message.
         """
-        points = ranges_to_points(laser_scan_msg.ranges)
+        self.points = ranges_to_points(laser_scan_msg.ranges)
 
-        front_points = [point for point in points if is_in_front_left(point) or is_in_front_right(point)]
-        self.front_points = [point for point in front_points if 0 < point.length < 5]
+        front_points = [point for point in self.points if is_in_front_left(point) or is_in_front_right(point)]
+        self.front_points = [point for point in front_points if 0 < point.length]
 
-        try:
-            (trans, rot) = self.listener.lookupTransform('/base_link', '/odom', rospy.Time(0))
-            rospy.loginfo(trans)
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            pass
+        # try:
+        #     (trans, rot) = self.listener.lookupTransform('/base_link', '/odom', rospy.Time(0))
+        #     rospy.loginfo(trans)
+        # except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+        #     pass
 
         if self.running:
             self.pub.publish(self.move())
