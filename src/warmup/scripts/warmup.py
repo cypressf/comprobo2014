@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 import rospy
+
 from geometry_msgs.msg import Twist, Vector3
+from sensor_msgs.msg import Joy
 from sensor_msgs.msg import LaserScan
 import signal
 import sys
@@ -9,8 +11,8 @@ import math
 import tf
 
 TAU = 2 * math.pi
-MAX_LINEAR_SPEED = 0.2
-MAX_ANGULAR_SPEED = 0.5
+MAX_LINEAR_SPEED = 0.3
+MAX_ANGULAR_SPEED = 1.0
 DANGER_ZONE_LENGTH = 1.0
 DANGER_ZONE_WIDTH = 0.5
 DANGER_POINTS_MULTIPLIER = 1/50.0
@@ -80,6 +82,8 @@ class Controller:
         self.listener = tf.TransformListener()
         self.sub = None
         self.move = self.move_forward
+        self.manual_linear_velocity = Vector3()
+        self.manual_angular_velocity = Vector3()
         self.running = False
         signal.signal(signal.SIGINT, self.signal_handler)
 
@@ -187,20 +191,36 @@ class Controller:
         front_points = [point for point in self.points if is_in_front_left(point) or is_in_front_right(point)]
         self.front_points = [point for point in front_points if 0 < point.length]
 
-        # try:
-        #     (trans, rot) = self.listener.lookupTransform('/base_link', '/odom', rospy.Time(0))
-        #     rospy.loginfo(trans)
-        # except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-        #     pass
+    def manual_override(self):
+        return Twist(linear=self.manual_linear_velocity, angular=self.manual_angular_velocity)
 
-        if self.running:
-            self.pub.publish(self.move())
+    def gamepad_callback(self, data):
+        x_button = data.buttons[1]
+        square_button = data.buttons[0]
+        if x_button:
+            self.move = self.manual_override
+        if square_button:
+            self.move = self.move_forward
+        angular_value = data.axes[0]
+        linear_value = data.axes[1]
+        self.manual_linear_velocity = Vector3(x=linear_value * MAX_LINEAR_SPEED)
+        self.manual_angular_velocity = Vector3(z=angular_value * MAX_ANGULAR_SPEED)
 
     def run(self):
         self.running = True
         self.sub = rospy.Subscriber('scan', LaserScan, self.scan_received)
+        rospy.Subscriber("joy", Joy, self.gamepad_callback)
+        rate = rospy.Rate(20)
         while not rospy.is_shutdown() and self.running:
-            rospy.spin()
+            # try:
+            #     (trans, rot) = self.listener.lookupTransform('/base_link', '/odom', rospy.Time(0))
+            #     rospy.loginfo(trans)
+            # except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            #     pass
+            movement = self.move()
+            rospy.loginfo(movement)
+            self.pub.publish(movement)
+            rate.sleep()
 
     def signal_handler(self, signal, frame):
         self.running = False
