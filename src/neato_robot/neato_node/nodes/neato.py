@@ -36,6 +36,7 @@ import roslib; roslib.load_manifest("neato_node")
 import rospy
 from math import sin,cos
 
+from std_msgs.msg import String
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Quaternion
 from geometry_msgs.msg import Twist
@@ -55,12 +56,19 @@ class NeatoNode:
 
         self.robot = xv11(self.port)
 
+        rospy.Subscriber("pi_cmd",String,self.pi_command)
+
         rospy.Subscriber("cmd_vel", Twist, self.cmdVelCb)
         self.scanPub = rospy.Publisher('scan', LaserScan)
         self.odomPub = rospy.Publisher('odom',Odometry)
         self.odomBroadcaster = TransformBroadcaster()
 
-        self.cmd_vel = [0,0] 
+        self.cmd_to_send = None
+
+        self.cmd_vel = [0,0]
+
+    def pi_command(self,msg):
+        self.cmd_to_send = msg
 
     def spin(self):        
         encoders = [0,0]
@@ -88,6 +96,10 @@ class NeatoNode:
         total_dth = 0.0
         print "about to spin!"
         while not rospy.is_shutdown():
+            if self.cmd_to_send != None:
+                self.robot.send_command(self.cmd_to_send)
+                self.cmd_to_send = None
+
             t_start = time.time()
             (scan.ranges, scan.intensities) = self.robot.getScanRanges()
             print 'Got scan ranges %f' % (time.time() - t_start)
@@ -149,7 +161,6 @@ class NeatoNode:
             r.sleep()
 
     def cmdVelCb(self,req):
-        #print "RECEIVED CMD DATA"
         x = req.linear.x * 1000
         th = req.angular.z * (BASE_WIDTH/2) 
         k = max(abs(x-th),abs(x+th))
@@ -160,7 +171,6 @@ class NeatoNode:
         print self.cmd_vel, "SENDING THIS VEL"
 
 if __name__ == "__main__":
-    print "STARTING UP"    
     robot = NeatoNode()
     robot.spin()
 
