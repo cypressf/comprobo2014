@@ -12,15 +12,15 @@ echo "Starting up adhoc wireless"
 echo "Make sure to use sudo when executing"
 echo ""
 
-iwlist wlan0 scan
+iwlist wlan1 scan
 stop network-manager
-ifconfig wlan0 down
+ifconfig wlan1 down
 sleep 2
-iwconfig wlan0 mode ad-hoc
-iwconfig wlan0 channel $CHANNEL
-iwconfig wlan0 key aaaaa11111
-iwconfig wlan0 essid RPi$IPSUFFIX_ORIG
+iwconfig wlan1 mode ad-hoc
+iwconfig wlan1 channel $CHANNEL
+iwconfig wlan1 key aaaaa11111
+iwconfig wlan1 essid RPi$IPSUFFIX_ORIG
 sleep 2
-ifconfig wlan0 192.168.17.$IPSUFFIX netmask 255.255.254.0 broadcast 192.168.17.255  up
+ifconfig wlan1 192.168.17.$IPSUFFIX netmask 255.255.254.0 broadcast 192.168.17.255  up
 
 ping $1
