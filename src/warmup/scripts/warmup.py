@@ -81,7 +81,7 @@ class Controller:
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
         self.listener = tf.TransformListener()
         self.sub = None
-        self.move = self.move_forward
+        self.move = self.manual_override
         self.manual_linear_velocity = Vector3()
         self.manual_angular_velocity = Vector3()
         self.running = False
